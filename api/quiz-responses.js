@@ -2,6 +2,13 @@
 // This can be deployed to Vercel, Netlify, or any serverless platform
 
 const mongoose = require('mongoose');
+const QuizConfig = require('../config');
+const EmailService = require('./email-service');
+const WaitlistService = require('./waitlist-service');
+
+// Initialize services
+const emailService = new EmailService();
+const waitlistService = new WaitlistService();
 
 // MongoDB Schema for Quiz Responses
 const QuizResponseSchema = new mongoose.Schema({
@@ -73,12 +80,7 @@ async function connectToDatabase() {
     return cachedDb;
   }
 
-  const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/pikvita-quiz';
-
-  const db = await mongoose.connect(MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  });
+  const db = await mongoose.connect(QuizConfig.database.mongoUri, QuizConfig.database.options);
 
   cachedDb = db;
   return db;
@@ -86,10 +88,16 @@ async function connectToDatabase() {
 
 // Serverless function handler
 module.exports = async (req, res) => {
-  // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS headers with configuration
+  const allowedOrigins = QuizConfig.security.corsOrigins;
+  const origin = req.headers.origin;
+
+  if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  }
+
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, X-Quiz-Source');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
@@ -143,11 +151,19 @@ module.exports = async (req, res) => {
 
       await quizResponse.save();
 
-      // Send personalized email (integrate with your email service)
-      await sendPersonalizedEmail(quizResponse);
+      // Send personalized email (async, don't wait)
+      if (QuizConfig.features.emailNotifications) {
+        sendPersonalizedEmail(quizResponse).catch(err =>
+          console.error('Email sending failed:', err)
+        );
+      }
 
-      // Add to waitlist (integrate with your waitlist service)
-      await addToWaitlist(quizResponse);
+      // Add to waitlist (async, don't wait)
+      if (QuizConfig.features.waitlistIntegration) {
+        addToWaitlist(quizResponse).catch(err =>
+          console.error('Waitlist addition failed:', err)
+        );
+      }
 
       return res.status(201).json({
         success: true,
@@ -156,10 +172,10 @@ module.exports = async (req, res) => {
       });
 
     } else if (req.method === 'GET') {
-      // Analytics endpoint (protected - add authentication)
+      // Analytics endpoint (protected)
       const apiKey = req.headers['x-api-key'];
 
-      if (!apiKey || apiKey !== process.env.API_KEY) {
+      if (!apiKey || apiKey !== QuizConfig.security.apiKey) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
@@ -245,35 +261,26 @@ function getPrimaryTrait(answers) {
 // Email service integration
 async function sendPersonalizedEmail(quizResponse) {
   try {
-    // Integrate with your email service (SendGrid, Mailgun, etc.)
-    const emailService = getEmailService();
+    const result = await emailService.sendQuizResultsEmail(quizResponse);
 
-    const emailTemplate = getPersonalizedEmailTemplate(quizResponse);
+    if (result.success) {
+      // Mark email as sent
+      quizResponse.emailSent = true;
+      await quizResponse.save();
+      console.log(`Email sent to ${quizResponse.email} (${result.messageId})`);
+    }
 
-    await emailService.send({
-      to: quizResponse.email,
-      from: 'hello@pikvita.com',
-      subject: `${quizResponse.name}, you're a ${quizResponse.persona.title}! ${quizResponse.persona.emoji}`,
-      html: emailTemplate
-    });
-
-    // Mark email as sent
-    quizResponse.emailSent = true;
-    await quizResponse.save();
-
-    console.log(`Personalized email sent to ${quizResponse.email}`);
+    return result;
   } catch (error) {
     console.error('Error sending email:', error);
+    throw error;
   }
 }
 
 // Waitlist integration
 async function addToWaitlist(quizResponse) {
   try {
-    // Integrate with your waitlist service
-    const waitlistService = getWaitlistService();
-
-    await waitlistService.add({
+    const result = await waitlistService.add({
       email: quizResponse.email,
       name: quizResponse.name,
       phone: quizResponse.phone,
@@ -287,133 +294,17 @@ async function addToWaitlist(quizResponse) {
       }
     });
 
-    quizResponse.waitlistAdded = true;
-    await quizResponse.save();
+    if (result.success) {
+      quizResponse.waitlistAdded = true;
+      await quizResponse.save();
+      console.log(`Added ${quizResponse.email} to waitlist (${result.id})`);
+    }
 
-    console.log(`Added ${quizResponse.email} to waitlist`);
+    return result;
   } catch (error) {
     console.error('Error adding to waitlist:', error);
+    throw error;
   }
 }
 
-// Generate personalized email template
-function getPersonalizedEmailTemplate(quizResponse) {
-  const { persona, name, scores } = quizResponse;
-
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Your Pikvita Quiz Results</title>
-    </head>
-    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; color: #78350f; background: linear-gradient(135deg, #fef7ed 0%, #fde8d7 100%); margin: 0; padding: 20px;">
-      <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 24px; overflow: hidden; box-shadow: 0 10px 40px rgba(139, 90, 43, 0.15);">
-
-        <!-- Header -->
-        <div style="background: linear-gradient(135deg, #e8795b 0%, #c45d3a 100%); padding: 40px 20px; text-align: center;">
-          <div style="font-size: 72px; margin-bottom: 16px;">${persona.emoji}</div>
-          <h1 style="color: white; margin: 0; font-size: 28px;">You're a ${persona.title}!</h1>
-        </div>
-
-        <!-- Body -->
-        <div style="padding: 40px 24px;">
-          <p style="font-size: 18px; color: #92400e;">Hey ${name}! 👋</p>
-
-          <p style="font-size: 16px; line-height: 1.8; color: #78350f;">
-            Thank you for taking the time to share your shopping soul with us. We loved getting to know you!
-          </p>
-
-          <div style="background: linear-gradient(135deg, ${persona.color}15 0%, ${persona.color}25 100%); border-left: 4px solid ${persona.color}; padding: 20px; border-radius: 12px; margin: 24px 0;">
-            <h3 style="margin: 0 0 12px 0; color: #78350f;">What This Means:</h3>
-            <p style="margin: 0; color: #92400e; font-size: 15px; line-height: 1.7;">
-              As a ${persona.title}, you value authentic connections and purposeful shopping. Pikvita is being built specifically for people like you who want to support local while enjoying modern convenience.
-            </p>
-          </div>
-
-          <h3 style="color: #78350f; margin-top: 32px;">Your Shopping DNA:</h3>
-          <div style="margin: 16px 0;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; align-items: center;">
-              <span style="font-size: 14px; color: #92400e;">❤️ Local Love</span>
-              <span style="font-weight: bold; color: #10b981;">${scores.localAffinity}%</span>
-            </div>
-            <div style="background: #fed7aa; height: 8px; border-radius: 4px; overflow: hidden;">
-              <div style="background: #10b981; height: 100%; width: ${scores.localAffinity}%; border-radius: 4px;"></div>
-            </div>
-          </div>
-
-          <div style="margin: 16px 0;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; align-items: center;">
-              <span style="font-size: 14px; color: #92400e;">⚡ Speed Priority</span>
-              <span style="font-weight: bold; color: #f59e0b;">${scores.speedPreference}%</span>
-            </div>
-            <div style="background: #fed7aa; height: 8px; border-radius: 4px; overflow: hidden;">
-              <div style="background: #f59e0b; height: 100%; width: ${scores.speedPreference}%; border-radius: 4px;"></div>
-            </div>
-          </div>
-
-          <div style="background: #fef3e2; padding: 24px; border-radius: 16px; margin: 32px 0; text-align: center;">
-            <h3 style="margin: 0 0 12px 0; color: #78350f;">What's Next?</h3>
-            <p style="margin: 0 0 20px 0; color: #92400e;">
-              You're on our priority waitlist! We'll notify you as soon as Pikvita launches in your area.
-            </p>
-            <a href="https://pikvita.com/waitlist" style="display: inline-block; background: linear-gradient(135deg, #e8795b 0%, #c45d3a 100%); color: white; padding: 16px 32px; border-radius: 12px; text-decoration: none; font-weight: bold; box-shadow: 0 4px 12px rgba(232, 121, 91, 0.3);">
-              View Your Waitlist Status →
-            </a>
-          </div>
-
-          <p style="font-size: 14px; color: #a16207; line-height: 1.7;">
-            In the meantime, we'd love to hear more about your local shopping experiences.
-            Hit reply and tell us about your favorite neighborhood shop!
-          </p>
-
-          <p style="font-size: 14px; color: #78350f; margin-top: 32px;">
-            With gratitude,<br>
-            <strong>The Pikvita Team</strong><br>
-            <span style="font-size: 12px; color: #a16207;">Supporting local, one delivery at a time 🧡</span>
-          </p>
-        </div>
-
-        <!-- Footer -->
-        <div style="background: #fef3e2; padding: 24px; text-align: center; border-top: 1px solid #fde8d7;">
-          <div style="font-size: 24px; margin-bottom: 12px;">🛒</div>
-          <p style="margin: 0; font-size: 12px; color: #92400e;">
-            Pikvita - Bringing your neighborhood to your doorstep
-          </p>
-          <p style="margin: 8px 0 0 0; font-size: 11px; color: #a16207;">
-            You're receiving this because you completed our quiz.
-            <a href="#" style="color: #e8795b;">Unsubscribe</a>
-          </p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `;
-}
-
-// Placeholder functions for service integrations
-function getEmailService() {
-  // Integrate with SendGrid, Mailgun, etc.
-  // Example with SendGrid:
-  // const sgMail = require('@sendgrid/mail');
-  // sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-  // return sgMail;
-
-  return {
-    send: async (email) => {
-      console.log('Email would be sent:', email);
-      // Implement actual email sending
-    }
-  };
-}
-
-function getWaitlistService() {
-  // Integrate with your waitlist management system
-  return {
-    add: async (user) => {
-      console.log('User would be added to waitlist:', user);
-      // Implement actual waitlist addition
-    }
-  };
-}
+// No longer needed - using service classes above

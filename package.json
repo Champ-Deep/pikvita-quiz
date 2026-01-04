@@ -7,7 +7,8 @@
     "dev": "npm run serve",
     "serve": "npx serve embed -p 8000",
     "api": "node api/quiz-responses.js",
-    "test": "echo \"No tests yet\" && exit 0"
+    "test": "echo \"No tests yet\" && exit 0",
+    "setup": "npm install && echo 'Copy .env.example to .env and configure your settings'"
   },
   "keywords": [
     "quiz",
@@ -15,15 +16,26 @@
     "shopping",
     "personality",
     "local-business",
-    "pikvita"
+    "pikvita",
+    "mobile-friendly",
+    "react"
   ],
   "author": "Pikvita Team",
   "license": "MIT",
   "dependencies": {
-    "mongoose": "^7.6.0"
+    "mongoose": "^7.6.0",
+    "@sendgrid/mail": "^7.7.0",
+    "mailgun.js": "^9.3.0",
+    "form-data": "^4.0.0",
+    "@mailchimp/mailchimp_marketing": "^3.0.80",
+    "aws-sdk": "^2.1492.0"
   },
   "devDependencies": {
-    "serve": "^14.2.0"
+    "serve": "^14.2.0",
+    "dotenv": "^16.3.1"
+  },
+  "optionalDependencies": {
+    "puppeteer": "^21.5.0"
   },
   "repository": {
     "type": "git",
@@ -31,8 +43,18 @@
   },
   "files": [
     "pikvita-quiz-mobile.jsx",
+    "pikvita-quiz-v2.jsx",
     "embed/",
     "api/",
-    "README.md"
-  ]
+    "config.js",
+    ".env.example",
+    "README.md",
+    "MOBILE_TESTING.md",
+    "INTEGRATION_GUIDE.md",
+    "DEPLOYMENT.md"
+  ],
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  }
 }
