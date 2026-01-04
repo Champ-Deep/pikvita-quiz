@@ -1,0 +1,38 @@
+{
+  "name": "pikvita-quiz",
+  "version": "2.0.0",
+  "description": "Mobile-friendly, embeddable quiz to discover shopping personalities and support local businesses",
+  "main": "pikvita-quiz-mobile.jsx",
+  "scripts": {
+    "dev": "npm run serve",
+    "serve": "npx serve embed -p 8000",
+    "api": "node api/quiz-responses.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "quiz",
+    "embeddable",
+    "shopping",
+    "personality",
+    "local-business",
+    "pikvita"
+  ],
+  "author": "Pikvita Team",
+  "license": "MIT",
+  "dependencies": {
+    "mongoose": "^7.6.0"
+  },
+  "devDependencies": {
+    "serve": "^14.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pikvita/quiz.git"
+  },
+  "files": [
+    "pikvita-quiz-mobile.jsx",
+    "embed/",
+    "api/",
+    "README.md"
+  ]
+}

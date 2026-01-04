@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="description" content="Discover your shopping personality with Pikvita's interactive quiz">
+  <meta name="theme-color" content="#e8795b">
+
+  <!-- Open Graph / Social sharing -->
+  <meta property="og:title" content="Pikvita Shopping Personality Quiz">
+  <meta property="og:description" content="Find out your shopping soul and how Pikvita can help you support local businesses">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://pikvita.com/quiz-share-image.jpg">
+
+  <title>Pikvita Shopping Quiz</title>
+
+  <!-- Preconnect to API -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Fraunces:wght@600;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN for quick deployment -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React and ReactDOM from CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel standalone for JSX transformation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    * {
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    h1, h2, h3 {
+      font-family: 'Fraunces', serif;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+      background: linear-gradient(135deg, #fef7ed 0%, #fde8d7 100%);
+    }
+
+    #quiz-root {
+      min-height: 100vh;
+    }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #fde8d7;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #e8795b;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #c45d3a;
+    }
+
+    /* Mobile-optimized range slider */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+      cursor: pointer;
+      height: 48px;
+      padding: 20px 0;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: white;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      border: 4px solid #e8795b;
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: white;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      border: 4px solid #e8795b;
+    }
+
+    /* Loading animation */
+    .loading-spinner {
+      border: 3px solid #fde8d7;
+      border-top: 3px solid #e8795b;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    @keyframes bounce-slow {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+
+    .animate-bounce-slow {
+      animation: bounce-slow 2s ease-in-out infinite;
+    }
+
+    /* Safe area padding for notched devices */
+    .safe-area-padding {
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    /* Smooth scrolling */
+    html {
+      scroll-behavior: smooth;
+    }
+
+    /* Prevent text selection on buttons */
+    button {
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    /* Loading state */
+    .quiz-loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      flex-direction: column;
+      gap: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div id="quiz-root">
+    <div class="quiz-loading">
+      <div class="loading-spinner"></div>
+      <p style="color: #78350f; font-size: 14px;">Loading your quiz...</p>
+    </div>
+  </div>
+
+  <!-- Quiz Application -->
+  <script type="text/babel">
+    const { useState, useRef, useEffect } = React;
+
+    // Configuration - can be overridden via URL params
+    const getConfig = () => {
+      const params = new URLSearchParams(window.location.search);
+      return {
+        apiEndpoint: params.get('api') || 'https://api.pikvita.com/api/quiz-responses',
+        source: params.get('source') || 'embedded',
+        redirectUrl: params.get('redirect') || null,
+        theme: params.get('theme') || 'default'
+      };
+    };
+
+    const config = getConfig();
+
+    // Main Quiz Component (same as mobile version but with embed-specific modifications)
+    const PikvitaQuiz = () => {
+      const [currentStep, setCurrentStep] = useState(0);
+      const [answers, setAnswers] = useState({});
+      const [userDetails, setUserDetails] = useState({});
+      const [showResults, setShowResults] = useState(false);
+      const [showUserForm, setShowUserForm] = useState(false);
+      const [isTransitioning, setIsTransitioning] = useState(false);
+      const [isSubmitting, setIsSubmitting] = useState(false);
+
+      // Notify parent window of quiz events (for embed analytics)
+      const notifyParent = (event, data = {}) => {
+        if (window.parent !== window) {
+          window.parent.postMessage({
+            type: 'pikvita-quiz',
+            event,
+            data
+          }, '*');
+        }
+      };
+
+      useEffect(() => {
+        notifyParent('quiz-loaded');
+      }, []);
+
+      // Questions (same as mobile version)
+      const questions = [
+        {
+          id: 'shopping_soul',
+          type: 'quadrant-selector',
+          question: "What's your shopping vibe?",
+          subtitle: "Choose the one that feels most like you ❤️",
+          quadrants: [
+            {
+              id: 'strategist',
+              emoji: '🗺️',
+              label: 'The Thoughtful Planner',
+              description: "I research, plan, and know exactly what I need",
+              position: { x: 25, y: 25 }
+            },
+            {
+              id: 'explorer',
+              emoji: '✨',
+              label: 'The Joyful Explorer',
+              description: "I love discovering new things on a whim",
+              position: { x: 75, y: 25 }
+            },
+            {
+              id: 'efficient',
+              emoji: '⚡',
+              label: 'The Time Saver',
+              description: "Get in, get what I need, get out—done!",
+              position: { x: 25, y: 75 }
+            },
+            {
+              id: 'adventurer',
+              emoji: '🎲',
+              label: 'The Spontaneous Soul',
+              description: "Every shopping trip is an adventure",
+              position: { x: 75, y: 75 }
+            }
+          ]
+        },
+        {
+          id: 'local_connection',
+          type: 'emotion-spectrum',
+          question: "How do you feel about your local shops?",
+          subtitle: "Every shop has a story, and so do you 🏪",
+          emotions: [
+            { emoji: '😶', label: 'New Here', color: '#94a3b8' },
+            { emoji: '👋', label: 'Familiar', color: '#f59e0b' },
+            { emoji: '🤝', label: 'Regular', color: '#10b981' },
+            { emoji: '🫂', label: 'Family', color: '#ec4899' },
+            { emoji: '💚', label: 'Community', color: '#8b5cf6' }
+          ]
+        },
+        {
+          id: 'value_blend',
+          type: 'simple-ranking',
+          question: "What matters most to you?",
+          subtitle: "Tap to rank from most to least important",
+          ingredients: [
+            { id: 'speed', emoji: '⚡', label: 'Fast Delivery', color: '#f59e0b' },
+            { id: 'local', emoji: '❤️', label: 'Supporting Local', color: '#ec4899' },
+            { id: 'variety', emoji: '✨', label: 'Wide Selection', color: '#8b5cf6' },
+            { id: 'price', emoji: '🏷️', label: 'Best Prices', color: '#10b981' }
+          ]
+        }
+      ];
+
+      const handleAnswer = (questionId, value) => {
+        setAnswers(prev => ({ ...prev, [questionId]: value }));
+        notifyParent('answer-recorded', { questionId, step: currentStep + 1 });
+      };
+
+      const nextStep = () => {
+        if (currentStep < questions.length - 1) {
+          setIsTransitioning(true);
+          setTimeout(() => {
+            setCurrentStep(prev => prev + 1);
+            setIsTransitioning(false);
+            notifyParent('step-changed', { step: currentStep + 2 });
+          }, 300);
+        } else {
+          setShowUserForm(true);
+          notifyParent('form-shown');
+        }
+      };
+
+      const prevStep = () => {
+        if (currentStep > 0) {
+          setIsTransitioning(true);
+          setTimeout(() => {
+            setCurrentStep(prev => prev - 1);
+            setIsTransitioning(false);
+          }, 300);
+        }
+      };
+
+      const handleUserFormSubmit = async (e) => {
+        e.preventDefault();
+        setIsSubmitting(true);
+
+        const persona = getPersona();
+        const quizData = {
+          userDetails,
+          answers,
+          persona,
+          timestamp: new Date().toISOString(),
+          score: calculateScore()
+        };
+
+        try {
+          const response = await fetch(config.apiEndpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Quiz-Source': config.source
+            },
+            body: JSON.stringify(quizData)
+          });
+
+          if (response.ok) {
+            notifyParent('quiz-completed', {
+              persona: persona.title,
+              email: userDetails.email
+            });
+          }
+        } catch (error) {
+          console.error('Error saving quiz:', error);
+        } finally {
+          setIsSubmitting(false);
+          setShowResults(true);
+
+          // Redirect if configured
+          if (config.redirectUrl) {
+            setTimeout(() => {
+              window.top.location.href = config.redirectUrl;
+            }, 5000);
+          }
+        }
+      };
+
+      const calculateScore = () => {
+        const localAffinity = (answers.local_connection || 50) / 100;
+        const ranking = answers.value_blend || [];
+        const speedPreference = ranking.findIndex(r => r.id === 'speed') >= 0
+          ? (4 - ranking.findIndex(r => r.id === 'speed')) * 25
+          : 50;
+
+        return {
+          localAffinity: Math.round(localAffinity * 100),
+          speedPreference,
+          overall: Math.round(((localAffinity + (ranking.length / 4)) / 2) * 100)
+        };
+      };
+
+      const getPersona = () => {
+        const ranking = answers.value_blend || [];
+        let primaryTrait = 'local';
+
+        if (ranking.length > 0) {
+          primaryTrait = ranking[0].id;
+        }
+
+        const personas = {
+          speed: {
+            title: 'The Time Warrior',
+            emoji: '⚡',
+            color: '#f59e0b',
+            personalizedMessage: "30-minute delivery from local shops? That's your sweet spot."
+          },
+          local: {
+            title: 'The Community Champion',
+            emoji: '🏪',
+            color: '#10b981',
+            personalizedMessage: "Every order supports a real person with a real dream."
+          },
+          variety: {
+            title: 'The Collector',
+            emoji: '🎨',
+            color: '#ec4899',
+            personalizedMessage: "Browse inventory from 20+ local stores at once!"
+          },
+          price: {
+            title: 'The Smart Shopper',
+            emoji: '🎯',
+            color: '#06b6d4',
+            personalizedMessage: "Compare prices across all local shops instantly."
+          }
+        };
+
+        return personas[primaryTrait] || personas.local;
+      };
+
+      // Simplified component implementations for embed
+      const QuadrantSelector = ({ question, value, onChange }) => {
+        const [selected, setSelected] = useState(value || null);
+
+        return (
+          <div className="space-y-3">
+            {question.quadrants.map((q) => (
+              <button
+                key={q.id}
+                onClick={() => { setSelected(q.id); onChange(q); }}
+                className={`w-full p-4 rounded-2xl text-left transition-all ${
+                  selected === q.id
+                    ? 'bg-gradient-to-br from-orange-100 to-amber-100 border-2 border-orange-400 shadow-lg'
+                    : 'bg-white/60 border-2 border-amber-200/50 hover:border-amber-300'
+                }`}
+              >
+                <div className="flex items-start gap-4">
+                  <div className="text-4xl">{q.emoji}</div>
+                  <div className="flex-1">
+                    <div className="font-bold text-lg mb-1">{q.label}</div>
+                    <p className="text-sm text-amber-700/80">{q.description}</p>
+                  </div>
+                  {selected === q.id && <div className="text-2xl">✓</div>}
+                </div>
+              </button>
+            ))}
+          </div>
+        );
+      };
+
+      const EmotionSpectrum = ({ question, value, onChange }) => {
+        const [selected, setSelected] = useState(value !== undefined ? Math.floor(value / 25) : null);
+
+        return (
+          <div className="space-y-4">
+            {selected !== null && (
+              <div className="text-center py-4 px-4 bg-white/60 rounded-2xl">
+                <div className="text-5xl mb-2">{question.emotions[selected].emoji}</div>
+                <div className="text-xl font-bold" style={{ color: question.emotions[selected].color }}>
+                  {question.emotions[selected].label}
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-5 gap-2">
+              {question.emotions.map((emotion, i) => (
+                <button
+                  key={i}
+                  onClick={() => { setSelected(i); onChange(i * 25); }}
+                  className={`aspect-square rounded-2xl transition-all ${
+                    selected === i ? 'scale-110 shadow-lg' : 'scale-100'
+                  }`}
+                  style={{
+                    background: selected === i ? `${emotion.color}40` : 'rgba(255,255,255,0.6)',
+                    border: `2px solid ${selected === i ? emotion.color : 'transparent'}`
+                  }}
+                >
+                  <div className="text-3xl">{emotion.emoji}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      };
+
+      const SimpleRanking = ({ question, value, onChange }) => {
+        const [ranking, setRanking] = useState(value || []);
+
+        const handleToggle = (item) => {
+          let newRanking = [...ranking];
+          const index = newRanking.findIndex(r => r.id === item.id);
+
+          if (index >= 0) {
+            newRanking.splice(index, 1);
+          } else {
+            newRanking.push(item);
+          }
+
+          setRanking(newRanking);
+          onChange(newRanking);
+        };
+
+        const getRank = (itemId) => {
+          const index = ranking.findIndex(r => r.id === itemId);
+          return index >= 0 ? index + 1 : null;
+        };
+
+        return (
+          <div className="space-y-3">
+            {ranking.length > 0 && (
+              <div className="bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl p-4 mb-4">
+                <div className="text-xs font-medium text-amber-700 mb-2">Your Priority Order:</div>
+                <div className="flex flex-wrap gap-2">
+                  {ranking.map((item, index) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium text-white"
+                      style={{ background: item.color }}
+                    >
+                      <span>#{index + 1}</span>
+                      <span>{item.emoji}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {question.ingredients.map((item) => {
+              const rank = getRank(item.id);
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => handleToggle(item)}
+                  className="w-full p-4 rounded-2xl transition-all"
+                  style={{
+                    background: rank ? `${item.color}30` : 'rgba(255,255,255,0.6)',
+                    border: rank ? `2px solid ${item.color}` : '2px solid rgba(251,191,36,0.3)'
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl">{item.emoji}</span>
+                      <span className="font-bold text-amber-900">{item.label}</span>
+                    </div>
+                    {rank && (
+                      <div
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold"
+                        style={{ background: item.color }}
+                      >
+                        {rank}
+                      </div>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        );
+      };
+
+      const renderQuestion = (question) => {
+        const value = answers[question.id];
+        const onChange = (val) => handleAnswer(question.id, val);
+
+        const components = {
+          'quadrant-selector': QuadrantSelector,
+          'emotion-spectrum': EmotionSpectrum,
+          'simple-ranking': SimpleRanking
+        };
+
+        const Component = components[question.type];
+        return Component ? <Component question={question} value={value} onChange={onChange} /> : null;
+      };
+
+      // User form
+      if (showUserForm) {
+        return (
+          <div className="min-h-screen p-4 flex items-center justify-center">
+            <div className="max-w-md w-full">
+              <div className="text-center mb-8">
+                <div className="text-6xl mb-4">🎉</div>
+                <h2 className="text-3xl font-bold text-amber-900 mb-2">You're Almost There!</h2>
+                <p className="text-amber-700/80">Just a few details to personalize your experience</p>
+              </div>
+
+              <form onSubmit={handleUserFormSubmit} className="bg-white/70 backdrop-blur-md rounded-3xl p-6 shadow-xl">
+                <div className="space-y-4">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Your name"
+                    value={userDetails.name || ''}
+                    onChange={(e) => setUserDetails({ ...userDetails, name: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border-2 border-amber-200 focus:border-orange-400 focus:outline-none bg-white/80"
+                  />
+                  <input
+                    type="email"
+                    required
+                    placeholder="Email address"
+                    value={userDetails.email || ''}
+                    onChange={(e) => setUserDetails({ ...userDetails, email: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border-2 border-amber-200 focus:border-orange-400 focus:outline-none bg-white/80"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full py-4 rounded-2xl font-bold text-white shadow-xl transition-all"
+                    style={{ background: 'linear-gradient(135deg, #e8795b 0%, #c45d3a 100%)' }}
+                  >
+                    {isSubmitting ? 'Saving...' : 'Show Me My Results! ✨'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      }
+
+      // Results
+      if (showResults) {
+        const persona = getPersona();
+        const scores = calculateScore();
+
+        return (
+          <div className="min-h-screen p-4" style={{
+            background: 'linear-gradient(135deg, #fef7ed 0%, #fde8d7 100%)'
+          }}>
+            <div className="max-w-md mx-auto pt-8 text-center">
+              <div className="text-7xl mb-4 animate-bounce-slow">{persona.emoji}</div>
+              <h1 className="text-3xl font-bold mb-4" style={{ color: persona.color }}>
+                You're a {persona.title}!
+              </h1>
+              <p className="text-amber-800 mb-6">{persona.personalizedMessage}</p>
+              <button
+                onClick={() => window.open('https://pikvita.com/waitlist', '_blank')}
+                className="px-8 py-4 rounded-2xl font-bold text-white shadow-xl"
+                style={{ background: `linear-gradient(135deg, ${persona.color} 0%, ${persona.color}dd 100%)` }}
+              >
+                Get Early Access →
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      // Quiz questions
+      const question = questions[currentStep];
+      const progress = ((currentStep + 1) / questions.length) * 100;
+      const hasAnswer = answers[question.id] !== undefined;
+
+      return (
+        <div className="min-h-screen p-4">
+          <div className="max-w-md mx-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+                     style={{ background: 'linear-gradient(135deg, #e8795b 0%, #c45d3a 100%)' }}>
+                  🛒
+                </div>
+                <span className="font-bold text-amber-900 text-lg">pikvita</span>
+              </div>
+              <div className="px-3 py-1.5 rounded-full bg-white/70 text-sm text-amber-700 font-medium">
+                {currentStep + 1} of {questions.length}
+              </div>
+            </div>
+
+            <div className="h-2 bg-amber-200/50 rounded-full mb-6 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${progress}%`,
+                  background: 'linear-gradient(90deg, #e8795b 0%, #c45d3a 50%, #4a7c59 100%)'
+                }}
+              />
+            </div>
+
+            <div
+              className={`rounded-3xl p-5 mb-6 transition-all duration-300 ${
+                isTransitioning ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
+              }`}
+              style={{
+                background: 'rgba(255, 255, 255, 0.8)',
+                backdropFilter: 'blur(10px)',
+                boxShadow: '0 8px 32px rgba(139, 90, 43, 0.12)'
+              }}
+            >
+              <h2 className="text-2xl font-bold text-amber-900 mb-2">{question.question}</h2>
+              <p className="text-amber-600/80 mb-6 text-sm">{question.subtitle}</p>
+              {renderQuestion(question)}
+            </div>
+
+            <div className="flex justify-between items-center gap-3">
+              <button
+                onClick={prevStep}
+                disabled={currentStep === 0}
+                className={`px-5 py-3 rounded-xl font-medium transition-all ${
+                  currentStep === 0
+                    ? 'opacity-0 pointer-events-none'
+                    : 'bg-white/70 text-amber-700 hover:bg-white'
+                }`}
+              >
+                ← Back
+              </button>
+
+              <button
+                onClick={nextStep}
+                disabled={!hasAnswer}
+                className={`px-6 py-3 rounded-xl font-bold text-white transition-all ${
+                  hasAnswer ? 'hover:scale-105' : 'opacity-50 cursor-not-allowed'
+                }`}
+                style={{
+                  background: hasAnswer ? 'linear-gradient(135deg, #e8795b 0%, #c45d3a 100%)' : '#ccc'
+                }}
+              >
+                {currentStep === questions.length - 1 ? 'Finish Quiz' : 'Continue'} →
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // Render the app
+    const root = ReactDOM.createRoot(document.getElementById('quiz-root'));
+    root.render(<PikvitaQuiz />);
+  </script>
+
+  <!-- Analytics (optional) -->
+  <script>
+    // Track quiz interactions
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'pikvita-quiz') {
+        console.log('Quiz event:', event.data.event, event.data.data);
+
+        // Send to your analytics service
+        if (window.gtag) {
+          gtag('event', event.data.event, {
+            event_category: 'quiz',
+            ...event.data.data
+          });
+        }
+      }
+    });
+  </script>
+</body>
+</html>
